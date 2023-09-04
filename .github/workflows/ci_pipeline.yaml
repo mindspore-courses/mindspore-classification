@@ -1,0 +1,61 @@
+# This workflow will install Python dependencies, run tests and lint with a single version of Python
+# For more information see: https://help.github.com/actions/language-and-framework-guides/using-python-with-github-actions
+
+name: CI Pipe
+
+on:
+  pull_request:
+    branches: [ "master" ]
+    paths:
+      - 'agents/**'
+      - 'exploration_strategies/**'
+      - 'utilities/**'
+      - 'results/**'
+      - 'environments/**'
+      - 'tests/**'
+      - '.github/workflows/**'
+  push:
+    branches: [ "master" ]
+    paths:
+      - 'agents/**'
+      - 'results/**'
+      - 'exploration_strategies/**'
+      - 'utilities/**'
+      - 'environments/**'
+      - 'tests/**'
+
+permissions:
+  contents: read
+
+jobs:
+  pylint-check:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: 3.9
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+    - name: Analysing the agents code with pylint
+      run: |
+        pylint agents --rcfile=.github/pylint.conf
+    - name: Analysing the results code with pylint
+      run: |
+        pylint results --rcfile=.github/pylint.conf
+    - name: Analysing the utilities code with pylint
+      run: |
+        pylint utilities --rcfile=.github/pylint.conf
+    - name: Analysing the exploration_strategies code with pylint
+      run: |
+        pylint exploration_strategies --rcfile=.github/pylint.conf
+    - name: Analysing the environments code with pylint
+      run: |
+        pylint environments --rcfile=.github/pylint.conf
+    - name: Analysing the tests code with pylint
+      run: |
+        pylint tests --rcfile=.github/pylint.conf
+    
