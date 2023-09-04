@@ -1,9 +1,9 @@
 """Useful utils
 """
 # progress bar
-from progress.bar import Bar as Bar
 import os
 import sys
+from utils.progress.bar import Bar
 
 from .eval import *
 from .logger import *
