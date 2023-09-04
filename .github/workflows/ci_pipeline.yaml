@@ -7,22 +7,15 @@ on:
   pull_request:
     branches: [ "master" ]
     paths:
-      - 'agents/**'
-      - 'exploration_strategies/**'
-      - 'utilities/**'
-      - 'results/**'
-      - 'environments/**'
-      - 'tests/**'
+      - '/**'
+      - 'models/**'
+      - 'utils/**'
       - '.github/workflows/**'
   push:
     branches: [ "master" ]
     paths:
-      - 'agents/**'
-      - 'results/**'
-      - 'exploration_strategies/**'
-      - 'utilities/**'
-      - 'environments/**'
-      - 'tests/**'
+      - 'models/**'
+      - 'utils/**'
 
 permissions:
   contents: read
@@ -40,22 +33,11 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
-    - name: Analysing the agents code with pylint
+    - name: Analysing the models code with pylint
       run: |
-        pylint agents --rcfile=.github/pylint.conf
-    - name: Analysing the results code with pylint
+        pylint models --rcfile=.github/pylint.conf
+    - name: Analysing the utils code with pylint
       run: |
-        pylint results --rcfile=.github/pylint.conf
-    - name: Analysing the utilities code with pylint
-      run: |
-        pylint utilities --rcfile=.github/pylint.conf
-    - name: Analysing the exploration_strategies code with pylint
-      run: |
-        pylint exploration_strategies --rcfile=.github/pylint.conf
-    - name: Analysing the environments code with pylint
-      run: |
-        pylint environments --rcfile=.github/pylint.conf
-    - name: Analysing the tests code with pylint
-      run: |
-        pylint tests --rcfile=.github/pylint.conf
+        pylint utils --rcfile=.github/pylint.conf
+
     
