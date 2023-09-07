@@ -2,7 +2,7 @@
 (c) YANG, Wei
 """
 import math
-from mindspore import nn
+from mindspore import nn, ops
 
 __all__ = [
     'VGG', 'vgg11', 'vgg11_bn', 'vgg13', 'vgg13_bn', 'vgg16', 'vgg16_bn',
@@ -29,24 +29,36 @@ class VGG(nn.Cell):
 
     def construct(self, x):
         x = self.features(x)
-        x = x.view(x.size(0), -1)
+        x = x.view(x.shape[0], -1)
         x = self.classifier(x)
         return x
 
     def _initialize_weights(self):
-        for m in self.modules():
+        for m in self.cells():
             if isinstance(m, nn.Conv2d):
                 n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
-                m.weight.data.normal_(0, math.sqrt(2. / n))
+                # m.weight.data.normal_(0, math.sqrt(2. / n))
+                temp = ops.normal(m.weight.data.shape, 0, math.sqrt(2. / n))
+                m.weight.set_data(temp)
                 if m.bias is not None:
-                    m.bias.data.zero_()
+                    # m.bias.data.zero_()
+                    temp = ops.zeros(m.bias.data.shape)
+                    m.bias.set_data(temp)
             elif isinstance(m, nn.BatchNorm2d):
-                m.weight.data.fill_(1)
-                m.bias.data.zero_()
+                # m.weight.data.fill_(1)
+                temp = ops.ones(m.weight.data.shape)
+                m.weight.set_data(temp)
+                # m.bias.data.zero_()
+                temp = ops.zeros(m.bias.data.shape)
+                m.bias.set_data(temp)
             elif isinstance(m, nn.Dense):
                 # n = m.weight.size(1)
-                m.weight.data.normal_(0, 0.01)
-                m.bias.data.zero_()
+                temp = ops.normal(m.weight.data.shape, 0, 0.01)
+                m.weight.set_data(temp)
+                # m.weight.data.normal_(0, 0.01)
+                # m.bias.data.zero_()
+                temp = ops.zeros(m.bias.data.shape)
+                m.bias.set_data(temp)
 
 
 def make_layers(_cfg, batch_norm=False):
@@ -57,7 +69,7 @@ def make_layers(_cfg, batch_norm=False):
         if v == 'M':
             layers += [nn.MaxPool2d(kernel_size=2, stride=2)]
         else:
-            conv2d = nn.Conv2d(in_channels, v, kernel_size=3, padding=1)
+            conv2d = nn.Conv2d(in_channels, v, kernel_size=3, padding=1, pad_mode='pad')
             if batch_norm:
                 layers += [conv2d, nn.BatchNorm2d(v), nn.ReLU()]
             else:

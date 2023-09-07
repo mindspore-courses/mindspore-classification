@@ -1,5 +1,9 @@
 .idea/
 .DS_Store
+.data/
+./checkpoints
+./checkpoint
+./rank_0
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

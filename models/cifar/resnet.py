@@ -8,7 +8,8 @@ https://github.com/pytorch/vision/blob/master/torchvision/models/resnet.py
 """
 from __future__ import absolute_import
 import math
-from mindspore import nn
+import mindspore as ms
+from mindspore import nn, ops
 
 __all__ = ['resnet']
 
@@ -16,7 +17,7 @@ __all__ = ['resnet']
 def conv3x3(in_planes, out_planes, stride=1):
     """3x3 convolution with padding"""
     return nn.Conv2d(in_planes, out_planes, kernel_size=3, stride=stride,
-                     padding=1, has_bias=False)
+                     padding=1, has_bias=False, pad_mode="pad")
 
 
 class BasicBlock(nn.Cell):
@@ -113,7 +114,7 @@ class ResNet(nn.Cell):
 
         self.inplanes = 16
         self.conv1 = nn.Conv2d(3, 16, kernel_size=3, padding=1,
-                               has_bias=False)
+                               has_bias=False, pad_mode="pad")
         self.bn1 = nn.BatchNorm2d(16)
         self.relu = nn.ReLU()
         self.layer1 = self._make_layer(block, 16, n)
@@ -121,14 +122,23 @@ class ResNet(nn.Cell):
         self.layer3 = self._make_layer(block, 64, n, stride=2)
         self.avgpool = nn.AvgPool2d(8)
         self.fc = nn.Dense(64 * block.expansion, num_classes)
+        # self._init_weights()
 
-        for m in self.modules():
+    def _init_weights(self):
+        for m in self.cells():
             if isinstance(m, nn.Conv2d):
                 n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
-                m.weight.data.normal_(0, math.sqrt(2. / n))
+                # m.weight.data.normal_(0, math.sqrt(2. / n))
+                temp = ops.normal(m.weight.data.shape, 0, math.sqrt(2. / n))
+                m.weight.set_data(temp)
             elif isinstance(m, nn.BatchNorm2d):
-                m.weight.data.fill_(1)
-                m.bias.data.zero_()
+                for mm in m.get_parameters():
+                    # m.weight.data.fill_(1)
+                    temp = ops.ones(mm.weight.data.shape)
+                    mm.weight.set_data(temp)
+                    # m.bias.data.zero_()
+                    temp = ops.zeros(mm.bias.data.shape)
+                    mm.bias.set_data(temp)
 
     def _make_layer(self, block, planes, blocks, stride=1):
         downsample = None
@@ -146,6 +156,7 @@ class ResNet(nn.Cell):
 
         return nn.SequentialCell(*layers)
 
+    @ms.jit
     def construct(self, x):
         x = self.conv1(x)
         x = self.bn1(x)
@@ -156,7 +167,7 @@ class ResNet(nn.Cell):
         x = self.layer3(x)  # 8x8
 
         x = self.avgpool(x)
-        x = x.view(x.size(0), -1)
+        x = x.view(x.shape[0], -1)
         x = self.fc(x)
 
         return x

@@ -1,5 +1,6 @@
 """densenet"""
 import math
+import mindspore as ms
 from mindspore import nn, ops
 
 __all__ = ['densenet']
@@ -15,7 +16,7 @@ class Bottleneck(nn.Cell):
         self.conv1 = nn.Conv2d(inplanes, planes, kernel_size=1, has_bias=False)
         self.bn2 = nn.BatchNorm2d(planes)
         self.conv2 = nn.Conv2d(planes, growthRate, kernel_size=3,
-                               padding=1, has_bias=False)
+                               padding=1, has_bias=False, pad_mode="pad")
         self.relu = nn.ReLU()
         self.dropRate = dropRate
 
@@ -43,7 +44,7 @@ class BasicBlock(nn.Cell):
         # planes = expansion * growthRate
         self.bn1 = nn.BatchNorm2d(inplanes)
         self.conv1 = nn.Conv2d(inplanes, growthRate, kernel_size=3,
-                               padding=1, has_bias=False)
+                               padding=1, has_bias=False, pad_mode="pad")
         self.relu = nn.ReLU()
         self.dropRate = dropRate
 
@@ -66,7 +67,7 @@ class Transition(nn.Cell):
         super().__init__()
         self.bn1 = nn.BatchNorm2d(inplanes)
         self.conv1 = nn.Conv2d(inplanes, outplanes, kernel_size=1,
-                               has_bias=False)
+                               has_bias=False, pad_mode="pad")
         self.relu = nn.ReLU()
 
     def construct(self, x):
@@ -95,7 +96,7 @@ class DenseNet(nn.Cell):
         # helper functions
         self.inplanes = growthRate * 2
         self.conv1 = nn.Conv2d(3, self.inplanes, kernel_size=3, padding=1,
-                               has_bias=False)
+                               has_bias=False, pad_mode="pad")
         self.dense1 = self._make_denseblock(block, n)
         self.trans1 = self._make_transition(compressionRate)
         self.dense2 = self._make_denseblock(block, n)
@@ -103,17 +104,19 @@ class DenseNet(nn.Cell):
         self.dense3 = self._make_denseblock(block, n)
         self.bn = nn.BatchNorm2d(self.inplanes)
         self.relu = nn.ReLU()
-        self.avgpool = nn.AvgPool2d(8)
+        # if num_classes == 10:
+        ker_size = 30
+        self.avgpool = nn.AvgPool2d(ker_size, pad_mode="pad", stride=ker_size)
         self.fc = nn.Dense(self.inplanes, num_classes)
 
         # Weight initialization
-        for m in self.modules():
-            if isinstance(m, nn.Conv2d):
-                n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
-                m.weight.data.normal_(0, math.sqrt(2. / n))
-            elif isinstance(m, nn.BatchNorm2d):
-                m.weight.data.fill_(1)
-                m.bias.data.zero_()
+        # for m in self.modules():
+        #     if isinstance(m, nn.Conv2d):
+        #         n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
+        #         m.weight.data.normal_(0, math.sqrt(2. / n))
+        #     elif isinstance(m, nn.BatchNorm2d):
+        #         m.weight.data.fill_(1)
+        #         m.bias.data.zero_()
 
     def _make_denseblock(self, block, blocks):
         layers = []
@@ -130,6 +133,7 @@ class DenseNet(nn.Cell):
         self.inplanes = outplanes
         return Transition(inplanes, outplanes)
 
+    @ms.jit
     def construct(self, x):
         x = self.conv1(x)
 
@@ -140,7 +144,7 @@ class DenseNet(nn.Cell):
         x = self.relu(x)
 
         x = self.avgpool(x)
-        x = x.view(x.size(0), -1)
+        x = x.view(x.shape[0], -1)
         x = self.fc(x)
 
         return x

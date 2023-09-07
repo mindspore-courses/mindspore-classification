@@ -32,11 +32,17 @@ class ResNeXtBottleneck(nn.Cell):
         # super(ResNeXtBottleneck, self).__init__()
         super().__init__()
         D = cardinality * out_channels // widen_factor
-        self.conv_reduce = nn.Conv2d(in_channels, D, kernel_size=1, stride=1, padding=0, has_bias=False)
+        self.conv_reduce = nn.Conv2d(
+            in_channels, D, kernel_size=1, stride=1, padding=0, has_bias=False, pad_mode="pad"
+        )
         self.bn_reduce = nn.BatchNorm2d(D)
-        self.conv_conv = nn.Conv2d(D, D, kernel_size=3, stride=stride, padding=1, group=cardinality, has_bias=False)
+        self.conv_conv = nn.Conv2d(
+            D, D, kernel_size=3, stride=stride, padding=1, group=cardinality, has_bias=False, pad_mode="pad"
+        )
         self.bn = nn.BatchNorm2d(D)
-        self.conv_expand = nn.Conv2d(D, out_channels, kernel_size=1, stride=1, padding=0, has_bias=False)
+        self.conv_expand = nn.Conv2d(
+            D, out_channels, kernel_size=1, stride=1, padding=0, has_bias=False, pad_mode="pad"
+        )
         self.bn_expand = nn.BatchNorm2d(out_channels)
 
         self.shortcut = nn.SequentialCell()
@@ -53,8 +59,8 @@ class ResNeXtBottleneck(nn.Cell):
             )
 
     def construct(self, x):
-        bottleneck = self.conv_reduce.forward(x)
-        bottleneck = ops.relu(self.bn_reduce.forward(bottleneck))
+        bottleneck = self.conv_reduce(x)
+        bottleneck = ops.relu(self.bn_reduce(bottleneck))
         bottleneck = self.conv_conv(bottleneck)
         bottleneck = ops.relu(self.bn(bottleneck))
         bottleneck = self.conv_expand(bottleneck)
@@ -87,7 +93,9 @@ class CifarResNeXt(nn.Cell):
         self.output_size = 64
         self.stages = [64, 64 * self.widen_factor, 128 * self.widen_factor, 256 * self.widen_factor]
 
-        self.conv_1_3x3 = nn.Conv2d(3, 64, 3, 1, 1, has_bias=False)
+        self.conv_1_3x3 = nn.Conv2d(
+            3, 64, 3, 1, padding=1, has_bias=False, pad_mode="pad"
+        )
         self.bn_1 = nn.BatchNorm2d(64)
         self.stage_1 = self.block('stage_1', self.stages[0], self.stages[1], 1)
         self.stage_2 = self.block('stage_2', self.stages[1], self.stages[2], 2)
@@ -97,16 +105,16 @@ class CifarResNeXt(nn.Cell):
         self.classifier.weight = initializer(HeNormal(), self.classifier.weight.shape, ms.float32)
         self.classifier.weight = self.classifier.weight.init_data()
 
-        for key in self.state_dict():
-            if key.split('.')[-1] == 'weight':
-                if 'conv' in key:
-                    # init.kaiming_normal(self.state_dict()[key], mode='fan_out')
-                    temp = initializer((HeNormal(), self.state_dict()[key].shape, ms.float32))
-                    self.state_dict()[key] = temp.init_data()
-                if 'bn' in key:
-                    self.state_dict()[key][...] = 1
-            elif key.split('.')[-1] == 'bias':
-                self.state_dict()[key][...] = 0
+        # for key in self.state_dict():
+        #     if key.split('.')[-1] == 'weight':
+        #         if 'conv' in key:
+        #             # init.kaiming_normal(self.state_dict()[key], mode='fan_out')
+        #             temp = initializer((HeNormal(), self.state_dict()[key].shape, ms.float32))
+        #             self.state_dict()[key] = temp.init_data()
+        #         if 'bn' in key:
+        #             self.state_dict()[key][...] = 1
+        #     elif key.split('.')[-1] == 'bias':
+        #         self.state_dict()[key][...] = 0
 
     def block(self, name, in_channels, out_channels, pool_stride=2):
         """ Stack n bottleneck modules where n is inferred from the depth of the network.
@@ -122,19 +130,28 @@ class CifarResNeXt(nn.Cell):
             # name_ = '%s_bottleneck_%d' % (name, bottleneck)
             name_ = f'{name}_bottleneck_{bottleneck}'
             if bottleneck == 0:
-                block.add_module(name_, ResNeXtBottleneck(in_channels, out_channels, pool_stride, self.cardinality,
-                                                          self.widen_factor))
+                # block.add_module(name_, ResNeXtBottleneck(in_channels, out_channels, pool_stride, self.cardinality,
+                #                                           self.widen_factor))
+                block.append(
+                    ResNeXtBottleneck(in_channels, out_channels, pool_stride, self.cardinality, self.widen_factor)
+                )
+
             else:
-                block.add_module(name_,
-                                 ResNeXtBottleneck(out_channels, out_channels, 1, self.cardinality, self.widen_factor))
+                # block.add_module(
+                #     name_, ResNeXtBottleneck(out_channels, out_channels, 1, self.cardinality, self.widen_factor)
+                # )
+                block.append(
+                    ResNeXtBottleneck(out_channels, out_channels, 1, self.cardinality, self.widen_factor)
+                )
         return block
 
+    @ms.jit
     def construct(self, x):
-        x = self.conv_1_3x3.forward(x)
-        x = ops.relu(self.bn_1.forward(x))
-        x = self.stage_1.forward(x)
-        x = self.stage_2.forward(x)
-        x = self.stage_3.forward(x)
+        x = self.conv_1_3x3(x)
+        x = ops.relu(self.bn_1(x))
+        x = self.stage_1(x)
+        x = self.stage_2(x)
+        x = self.stage_3(x)
         x = ops.avg_pool2d(x, 8, 1)
         x = x.view(-1, 1024)
         return self.classifier(x)

@@ -8,6 +8,7 @@ https://github.com/pytorch/vision/blob/master/torchvision/models/resnet.py
 """
 from __future__ import absolute_import
 import math
+import mindspore as ms
 from mindspore import nn
 
 __all__ = ['preresnet']
@@ -16,7 +17,7 @@ __all__ = ['preresnet']
 def conv3x3(in_planes, out_planes, stride=1):
     """3x3 convolution with padding"""
     return nn.Conv2d(in_planes, out_planes, kernel_size=3, stride=stride,
-                     padding=1, has_bias=False)
+                     padding=1, has_bias=False, pad_mode="pad")
 
 
 class BasicBlock(nn.Cell):
@@ -114,7 +115,7 @@ class PreResNet(nn.Cell):
 
         self.inplanes = 16
         self.conv1 = nn.Conv2d(3, 16, kernel_size=3, padding=1,
-                               has_bias=False)
+                               has_bias=False, pad_mode="pad")
         self.layer1 = self._make_layer(block, 16, n)
         self.layer2 = self._make_layer(block, 32, n, stride=2)
         self.layer3 = self._make_layer(block, 64, n, stride=2)
@@ -123,6 +124,7 @@ class PreResNet(nn.Cell):
         self.avgpool = nn.AvgPool2d(8)
         self.fc = nn.Dense(64 * block.expansion, num_classes)
 
+    def _init_params(self):
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
                 n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
@@ -136,7 +138,7 @@ class PreResNet(nn.Cell):
         if stride != 1 or self.inplanes != planes * block.expansion:
             downsample = nn.SequentialCell(
                 nn.Conv2d(self.inplanes, planes * block.expansion,
-                          kernel_size=1, stride=stride, has_bias=False),
+                          kernel_size=1, stride=stride, has_bias=False, pad_mode="pad"),
             )
 
         layers = [block(self.inplanes, planes, stride, downsample)]
@@ -146,6 +148,7 @@ class PreResNet(nn.Cell):
 
         return nn.SequentialCell(*layers)
 
+    @ms.jit
     def construct(self, x):
         x = self.conv1(x)
 
@@ -156,7 +159,7 @@ class PreResNet(nn.Cell):
         x = self.relu(x)
 
         x = self.avgpool(x)
-        x = x.view(x.size(0), -1)
+        x = x.view(x.shape[0], -1)
         x = self.fc(x)
 
         return x

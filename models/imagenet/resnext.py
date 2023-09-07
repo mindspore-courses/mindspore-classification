@@ -33,11 +33,17 @@ class Bottleneck(nn.Cell):
         D = int(math.floor(planes * (baseWidth / 64)))
         C = cardinality
 
-        self.conv1 = nn.Conv2d(inplanes, D * C, kernel_size=1, stride=1, padding=0, has_bias=False)
+        self.conv1 = nn.Conv2d(
+            inplanes, D * C, kernel_size=1, stride=1, padding=0, has_bias=False, pad_mode="pad"
+        )
         self.bn1 = nn.BatchNorm2d(D * C)
-        self.conv2 = nn.Conv2d(D * C, D * C, kernel_size=3, stride=stride, padding=1, group=C, has_bias=False)
+        self.conv2 = nn.Conv2d(
+            D * C, D * C, kernel_size=3, stride=stride, padding=1, group=C, has_bias=False, pad_mode="pad"
+        )
         self.bn2 = nn.BatchNorm2d(D * C)
-        self.conv3 = nn.Conv2d(D * C, planes * 4, kernel_size=1, stride=1, padding=0, has_bias=False)
+        self.conv3 = nn.Conv2d(
+            D * C, planes * 4, kernel_size=1, stride=1, padding=0, has_bias=False, pad_mode="pad"
+        )
         self.bn3 = nn.BatchNorm2d(planes * 4)
         self.relu = nn.ReLU()
 
@@ -90,10 +96,12 @@ class ResNeXt(nn.Cell):
         self.inplanes = 64
         self.output_size = 64
 
-        self.conv1 = nn.Conv2d(3, 64, 7, 2, 3, has_bias=False)
+        self.conv1 = nn.Conv2d(
+            3, 64, 7, 2, pad_mode='pad', padding=3, has_bias=False
+        )
         self.bn1 = nn.BatchNorm2d(64)
         self.relu = nn.ReLU()
-        self.maxpool1 = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
+        self.maxpool1 = nn.MaxPool2d(kernel_size=3, stride=2, padding=1, pad_mode='pad')
         self.layer1 = self._make_layer(block, 64, layers[0])
         self.layer2 = self._make_layer(block, 128, layers[1], 2)
         self.layer3 = self._make_layer(block, 256, layers[2], 2)
@@ -101,13 +109,13 @@ class ResNeXt(nn.Cell):
         self.avgpool = nn.AvgPool2d(7)
         self.fc = nn.Dense(512 * block.expansion, num_classes)
 
-        for m in self.modules():
-            if isinstance(m, nn.Conv2d):
-                n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
-                m.weight.data.normal_(0, math.sqrt(2. / n))
-            elif isinstance(m, nn.BatchNorm2d):
-                m.weight.data.fill_(1)
-                m.bias.data.zero_()
+        # for m in self.cells():
+        #     if isinstance(m, nn.Conv2d):
+        #         n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
+        #         m.weight.data.normal_(0, math.sqrt(2. / n))
+        #     elif isinstance(m, nn.BatchNorm2d):
+        #         m.weight.data.fill_(1)
+        #         m.bias.data.zero_()
 
     def _make_layer(self, block, planes, blocks, stride=1):
         """ Stack n bottleneck modules where n is inferred from the depth of the network.
