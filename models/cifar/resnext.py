@@ -128,7 +128,7 @@ class CifarResNeXt(nn.Cell):
         block = nn.SequentialCell()
         for bottleneck in range(self.block_depth):
             # name_ = '%s_bottleneck_%d' % (name, bottleneck)
-            # name_ = f'{name}_bottleneck_{bottleneck}'
+            name_ = f'{name}_bottleneck_{bottleneck}'
             if bottleneck == 0:
                 # block.add_module(name_, ResNeXtBottleneck(in_channels, out_channels, pool_stride, self.cardinality,
                 #                                           self.widen_factor))
@@ -143,6 +143,7 @@ class CifarResNeXt(nn.Cell):
                 block.append(
                     ResNeXtBottleneck(out_channels, out_channels, 1, self.cardinality, self.widen_factor)
                 )
+                print(name_)
         return block
 
     @ms.jit
