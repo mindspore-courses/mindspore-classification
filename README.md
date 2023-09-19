@@ -51,12 +51,15 @@ Since the size of images in CIFAR dataset is `32x32`, popular network structures
 - [x] [ResNet](https://arxiv.org/abs/1512.03385)
 - [x] [Pre-act-ResNet](https://arxiv.org/abs/1603.05027)
 - [x] [ResNeXt](https://arxiv.org/abs/1611.05431) (Imported from [ResNeXt.MindSpore](https://github.com/prlz77/ResNeXt.pytorch))
-- [x] [Wide Residual Networks](http://arxiv.org/abs/1605.07146) (Imported from [WideResNet-MindSpore](https://github.com/xternalz/WideResNet-pytorch))
 - [x] [DenseNet](https://arxiv.org/abs/1608.06993)
 
+[//]: # (- [x] [Wide Residual Networks]&#40;http://arxiv.org/abs/1605.07146&#41; &#40;Imported from [WideResNet-MindSpore]&#40;https://github.com/xternalz/WideResNet-pytorch&#41;&#41;)
+
+
 ### ImageNet
-- [x] All models in `torchvision.models` (alexnet, vgg, resnet, densenet, inception_v3, squeezenet)
-- [x] [ResNeXt](https://arxiv.org/abs/1611.05431)
+- [x] All models in `mindcv.models` (alexnet, vgg, resnet, densenet, inception_v3, squeezenet)
+
+[//]: # (- [x] [ResNeXt]&#40;https://arxiv.org/abs/1611.05431&#41;)
 
 
 ## Contribute
