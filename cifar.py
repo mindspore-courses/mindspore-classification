@@ -33,8 +33,8 @@ model_names = sorted(name for name in models.__dict__
 parser = argparse.ArgumentParser(description='PyTorch CIFAR10/100 Training')
 # Datasets
 parser.add_argument('-d', '--dataset', default='cifar10', type=str)
-parser.add_argument('-j', '--workers', default=2, type=int, metavar='N',
-                    help='number of data loading workers (default: 2)')
+parser.add_argument('-j', '--workers', default=4, type=int, metavar='N',
+                    help='number of data loading workers (default: 4)')
 # Optimization options
 parser.add_argument('--epochs', default=300, type=int, metavar='N',
                     help='number of total epochs to run')
@@ -84,6 +84,9 @@ parser.add_argument('-e', '--evaluate', dest='evaluate', action='store_true',
 parser.add_argument('--gpu-id', default='0', type=int,
                     help='id(s) for CUDA_VISIBLE_DEVICES')
 
+parser.add_argument('--best-acc', default='0', type=float,
+                    help='best accuracy')
+
 args = parser.parse_args()
 state = {k: v for k, v in args._get_kwargs()}
 
@@ -112,7 +115,7 @@ if args.manualSeed is None:
 random.seed(args.manualSeed)
 ms.set_seed(args.manualSeed)
 
-best_acc = 0  # best test accuracy
+best_acc = args.best_acc  # best test accuracy
 
 
 def main():
@@ -201,28 +204,31 @@ def main():
     # model = torch.nn.DataParallel(model)
     print('    Total params: %.2fM' % (sum(p.numel() for p in model.trainable_params()) / 1000000.0))
     criterion = nn.CrossEntropyLoss()
+
+    # Resume
+    title = 'cifar-10-' + args.arch
+    if args.resume:
+        # Load checkpoint.
+        print('==> Resuming from checkpoint..')
+        assert os.path.isfile(args.resume), 'Error: no checkpoint directory found!'
+        args.checkpoint = os.path.dirname(args.resume)
+        # checkpoint = torch.load(args.resume)
+        param_dict = ms.load_checkpoint(args.resume)
+        # param_not_load, _ = ms.load_param_into_net(model, param_dict)
+        ms.load_param_into_net(model, param_dict)
+        # best_acc = checkpoint['best_acc']
+        # start_epoch = checkpoint['epoch']
+        # model.load_state_dict(checkpoint['state_dict'])
+        # optimizer.load_state_dict(checkpoint['optimizer'])
+        logger = Logger(os.path.join(args.checkpoint, 'log.txt'), title=title, resume=True)
+    else:
+        logger = Logger(os.path.join(args.checkpoint, 'log.txt'), title=title)
+        logger.set_names(['Learning Rate', 'Train Loss', 'Valid Loss', 'Train Acc.', 'Valid Acc.', 'Best ACC'])
+
     # optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
     optimizer = nn.SGD(
         model.trainable_params(), learning_rate=args.lr, momentum=args.momentum, weight_decay=args.weight_decay
     )
-
-    # Resume
-    title = 'cifar-10-' + args.arch
-    # if args.resume:
-    #     # Load checkpoint.
-    #     print('==> Resuming from checkpoint..')
-    #     assert os.path.isfile(args.resume), 'Error: no checkpoint directory found!'
-    #     args.checkpoint = os.path.dirname(args.resume)
-    #     # checkpoint = torch.load(args.resume)
-    #     checkpoint = ms.load_checkpoint(args.resume)
-    #     best_acc = checkpoint['best_acc']
-    #     start_epoch = checkpoint['epoch']
-    #     model.load_state_dict(checkpoint['state_dict'])
-    #     optimizer.load_state_dict(checkpoint['optimizer'])
-    #     logger = Logger(os.path.join(args.checkpoint, 'log.txt'), title=title, resume=True)
-    # else:
-    logger = Logger(os.path.join(args.checkpoint, 'log.txt'), title=title)
-    logger.set_names(['Learning Rate', 'Train Loss', 'Valid Loss', 'Train Acc.', 'Valid Acc.'])
 
     if args.evaluate:
         print('\nEvaluation only')
@@ -230,17 +236,22 @@ def main():
         print(' Test Loss:  %.8f, Test Acc:  %.2f' % (test_loss, test_acc))
         return
 
+    def forward_fn(data, label):
+        logits = model(data)
+        _loss = criterion(logits, label)
+        return _loss, logits
+    grad_fn = ms.value_and_grad(forward_fn, None, optimizer.parameters, has_aux=True)
     # Train and val
     for epoch in range(start_epoch, args.epochs):
         adjust_learning_rate(optimizer, epoch)
 
         print('\nEpoch: [%d | %d] LR: %f' % (epoch + 1, args.epochs, state['lr']))
 
-        train_loss, train_acc = train(trainloader, model, criterion, optimizer)
+        train_loss, train_acc = train(trainloader, model, grad_fn, optimizer)
         test_loss, test_acc = test(testloader, model, criterion)
 
         # append logger file
-        logger.append([state['lr'], train_loss, test_loss, train_acc, test_acc])
+        logger.append([state['lr'], train_loss, test_loss, train_acc, test_acc, best_acc])
 
         # save model
         is_best = test_acc > best_acc
@@ -262,13 +273,7 @@ def main():
     print(best_acc)
 
 
-def train(trainloader, model, criterion, optimizer):
-    def forward_fn(data, label):
-        logits = model(data)
-        _loss = criterion(logits, label)
-        return _loss, logits
-
-    grad_fn = ms.value_and_grad(forward_fn, None, optimizer.parameters, has_aux=True)
+def train(trainloader, model, grad_fn, optimizer):
     # switch to train mode
     model.set_train(mode=True)
 
@@ -316,7 +321,7 @@ def train(trainloader, model, criterion, optimizer):
 
         # plot progress
         bar.suffix = ('({batch}/{size}) Data: {data:.3f}s | Batch: {bt:.3f}s | Total: {total:} | ETA: {eta:} | '
-                      'Loss: {loss:.4f} | top1: {top1: .4f} | top5: {top5: .4f}').format(
+                      'Loss: {loss:.4f} | top1: {top1: .4f} | top5: {top5: .4f} | Best ACC:{best_acc: .4f}').format(
             batch=batch_idx + 1,
             size=len(trainloader),
             data=data_time.avg,
@@ -326,6 +331,7 @@ def train(trainloader, model, criterion, optimizer):
             loss=losses.avg,
             top1=top1.avg,
             top5=top5.avg,
+            best_acc=best_acc,
         )
         bar.next()
     bar.finish()

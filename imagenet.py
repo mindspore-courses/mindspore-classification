@@ -11,7 +11,7 @@ import time
 import random
 
 import mindspore as ms
-from mindspore import dataset, nn
+from mindspore import dataset, nn, ops
 from mindspore.dataset import vision, transforms
 from mindcv import create_model
 # import torch
@@ -97,13 +97,16 @@ parser.add_argument('--pretrained', dest='pretrained', action='store_true',
 parser.add_argument('--gpu-id', default='0', type=int,
                     help='id(s) for CUDA_VISIBLE_DEVICES')
 
+parser.add_argument('--best-acc', default='0', type=float,
+                    help='best accuracy')
+
 args = parser.parse_args()
 state = {k: v for k, v in args._get_kwargs()}
 
 # Use CUDA
 # os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu_id
 # ms.set_context(device_target='CPU', device_id=0)
-ms.set_context(device_target='CPU')
+# ms.set_context(device_target='CPU')
 
 # Random seed
 if args.manualSeed is None:
@@ -123,7 +126,7 @@ elif args.gpu_id == 2:
 else:
     ms.set_context(device_target='GPU')
 
-best_acc = 0  # best test accuracy
+best_acc = args.best_acc  # best test accuracy
 
 
 def main():
@@ -200,20 +203,17 @@ def main():
 
     # Resume
     title = 'ImageNet-' + args.arch
-    # if args.resume:
-    #     # Load checkpoint.
-    #     print('==> Resuming from checkpoint..')
-    #     assert os.path.isfile(args.resume), 'Error: no checkpoint directory found!'
-    #     args.checkpoint = os.path.dirname(args.resume)
-    #     checkpoint = torch.load(args.resume)
-    #     best_acc = checkpoint['best_acc']
-    #     start_epoch = checkpoint['epoch']
-    #     model.load_state_dict(checkpoint['state_dict'])
-    #     optimizer.load_state_dict(checkpoint['optimizer'])
-    #     logger = Logger(os.path.join(args.checkpoint, 'log.txt'), title=title, resume=True)
-    # else:
-    logger = Logger(os.path.join(args.checkpoint, 'log.txt'), title=title)
-    logger.set_names(['Learning Rate', 'Train Loss', 'Valid Loss', 'Train Acc.', 'Valid Acc.'])
+    if args.resume:
+        # Load checkpoint.
+        print('==> Resuming from checkpoint..')
+        assert os.path.isfile(args.resume), 'Error: no checkpoint directory found!'
+        args.checkpoint = os.path.dirname(args.resume)
+        param_dict = ms.load_checkpoint(args.resume)
+        ms.load_param_into_net(model, param_dict)
+        logger = Logger(os.path.join(args.checkpoint, 'log.txt'), title=title, resume=True)
+    else:
+        logger = Logger(os.path.join(args.checkpoint, 'log.txt'), title=title)
+        logger.set_names(['Learning Rate', 'Train Loss', 'Valid Loss', 'Train Acc.', 'Valid Acc.', 'Best ACC'])
 
     if args.evaluate:
         print('\nEvaluation only')
@@ -222,27 +222,34 @@ def main():
         return
 
     # Train and val
+    def forward_fn(data, label):
+        logits = model(data)
+        _loss = criterion(logits, label)
+        return _loss, logits
+
+    grad_fn = ms.value_and_grad(forward_fn, None, optimizer.parameters, has_aux=True)
     for epoch in range(start_epoch, args.epochs):
         adjust_learning_rate(optimizer, epoch)
 
         print('\nEpoch: [%d | %d] LR: %f' % (epoch + 1, args.epochs, state['lr']))
 
-        train_loss, train_acc = train(train_loader, model, criterion, optimizer)
+        train_loss, train_acc = train(train_loader, model, grad_fn, optimizer)
         test_loss, test_acc = test(val_loader, model, criterion)
 
         # append logger file
-        logger.append([state['lr'], train_loss, test_loss, train_acc, test_acc])
+        logger.append([state['lr'], train_loss, test_loss, train_acc, test_acc, best_acc])
 
         # save model
         is_best = test_acc > best_acc
         best_acc = max(test_acc, best_acc)
-        save_checkpoint({
-            'epoch': epoch + 1,
-            'state_dict': model.state_dict(),
-            'acc': test_acc,
-            'best_acc': best_acc,
-            'optimizer': optimizer.state_dict(),
-        }, is_best, checkpoint=args.checkpoint)
+        # save_checkpoint({
+        #     'epoch': epoch + 1,
+        #     'state_dict': model.state_dict(),
+        #     'acc': test_acc,
+        #     'best_acc': best_acc,
+        #     'optimizer': optimizer.state_dict(),
+        # }, is_best, checkpoint=args.checkpoint)
+        save_checkpoint(model, is_best, checkpoint=args.checkpoint)
 
     logger.close()
     logger.plot()
@@ -252,14 +259,7 @@ def main():
     print(best_acc)
 
 
-def train(train_loader, model, criterion, optimizer):
-    def forward_fn(data, label):
-        logits = model(data)
-        _loss = criterion(logits, label)
-        return _loss, logits
-
-    grad_fn = ms.value_and_grad(forward_fn, None, optimizer.parameters, has_aux=True)
-
+def train(train_loader, model, grad_fn, optimizer):
     # switch to train mode
     model.set_train(mode=True)
 
@@ -276,12 +276,12 @@ def train(train_loader, model, criterion, optimizer):
         data_time.update(time.time() - end)
 
         # compute output
-        outputs = model(inputs)
-        loss = criterion(outputs, targets)
+        # outputs = model(inputs)
+        # loss = criterion(outputs, targets)
         (loss, outputs), grads = grad_fn(inputs, targets)
 
         # measure accuracy and record loss
-        prec1, prec5 = accuracy(outputs.data, targets.data, topk=(1, 5))
+        prec1, prec5 = accuracy(outputs, targets, topk=(1, 5))
         losses.update(loss.numpy().item(), inputs.shape[0])
         top1.update(prec1.numpy().item(), inputs.shape[0])
         top5.update(prec5.numpy().item(), inputs.shape[0])
@@ -297,7 +297,7 @@ def train(train_loader, model, criterion, optimizer):
         end = time.time()
 
         # plot progress
-        bar.suffix = '({batch}/{size}) Data: {data:.3f}s | Batch: {bt:.3f}s | Total: {total:} | ETA: {eta:} | Loss: {loss:.4f} | top1: {top1: .4f} | top5: {top5: .4f}'.format(
+        bar.suffix = '({batch}/{size}) Data: {data:.3f}s | Batch: {bt:.3f}s | Total: {total:} | ETA: {eta:} | Loss: {loss:.4f} | top1: {top1: .4f} | top5: {top5: .4f} | Best ACC{best_acc: .4f}'.format(
             batch=batch_idx + 1,
             size=len(train_loader),
             data=data_time.val,
@@ -307,6 +307,7 @@ def train(train_loader, model, criterion, optimizer):
             loss=losses.avg,
             top1=top1.avg,
             top5=top5.avg,
+            best_acc=best_acc
         )
         bar.next()
     bar.finish()
@@ -337,7 +338,7 @@ def test(val_loader, model, criterion):
         loss = criterion(outputs, targets)
 
         # measure accuracy and record loss
-        prec1, prec5 = accuracy(outputs.data, targets.data, topk=(1, 5))
+        prec1, prec5 = accuracy(outputs, targets, topk=(1, 5))
         losses.update(loss.numpy().item(), inputs.shape[0])
         top1.update(prec1.numpy().item(), inputs.shape[0])
         top5.update(prec5.numpy().item(), inputs.shape[0])
@@ -347,7 +348,7 @@ def test(val_loader, model, criterion):
         end = time.time()
 
         # plot progress
-        bar.suffix = '({batch}/{size}) Data: {data:.3f}s | Batch: {bt:.3f}s | Total: {total:} | ETA: {eta:} | Loss: {loss:.4f} | top1: {top1: .4f} | top5: {top5: .4f}'.format(
+        bar.suffix = '({batch}/{size}) Data: {data:.3f}s | Batch: {bt:.3f}s | Total: {total:} | ETA: {eta:} | Loss: {loss:.4f} | top1: {top1: .4f} | top5: {top5: .4f} | Best ACC{best_acc: .4f}'.format(
             batch=batch_idx + 1,
             size=len(val_loader),
             data=data_time.avg,
@@ -357,15 +358,16 @@ def test(val_loader, model, criterion):
             loss=losses.avg,
             top1=top1.avg,
             top5=top5.avg,
+            best_acc=best_acc,
         )
         bar.next()
     bar.finish()
     return (losses.avg, top1.avg)
 
 
-def save_checkpoint(state, is_best, checkpoint='checkpoint', filename='checkpoint'):
+def save_checkpoint(obj, is_best, checkpoint='checkpoint', filename='checkpoint.ckpt'):
     filepath = os.path.join(checkpoint, filename)
-    ms.save_checkpoint(state, filepath)
+    ms.save_checkpoint(obj, filepath)
     if is_best:
         shutil.copyfile(filepath, os.path.join(checkpoint, 'model_best.ckpt'))
 
@@ -374,8 +376,9 @@ def adjust_learning_rate(optimizer, epoch):
     global state
     if epoch in args.schedule:
         state['lr'] *= args.gamma
-        for param_group in optimizer.param_groups:
-            param_group['lr'] = state['lr']
+        # for param_group in optimizer.param_groups:
+        #     param_group['lr'] = state['lr']
+        ops.assign(optimizer.learning_rate, ms.Tensor(state['lr'], ms.float32))
 
 
 if __name__ == '__main__':

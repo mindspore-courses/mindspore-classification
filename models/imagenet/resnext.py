@@ -7,6 +7,7 @@ import from https://github.com/facebookresearch/ResNeXt/blob/master/models/resne
 """
 from __future__ import division
 import math
+import mindspore as ms
 from mindspore import nn
 
 __all__ = ['resnext50', 'resnext101', 'resnext152']
@@ -141,6 +142,7 @@ class ResNeXt(nn.Cell):
 
         return nn.SequentialCell(*layers)
 
+    @ms.jit
     def construct(self, x):
         x = self.conv1(x)
         x = self.bn1(x)
@@ -151,7 +153,7 @@ class ResNeXt(nn.Cell):
         x = self.layer3(x)
         x = self.layer4(x)
         x = self.avgpool(x)
-        x = x.view(x.size(0), -1)
+        x = x.view(x.shape[0], -1)
         x = self.fc(x)
 
         return x
